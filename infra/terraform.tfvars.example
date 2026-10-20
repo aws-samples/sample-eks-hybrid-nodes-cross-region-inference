@@ -1,0 +1,90 @@
+cluster_name       = "cross-region-inference-demo"
+cluster_region     = "us-west-2"
+remote_region      = "us-east-1"
+kubernetes_version = "1.37"
+
+# Restrict Terraform to the intended AWS account.
+allowed_account_ids = ["123456789012"]
+
+cluster_vpc_cidr  = "10.0.0.0/16"
+remote_vpc_cidr   = "172.16.0.0/16"
+remote_node_cidrs = ["172.16.0.0/18"]
+# Cilium allocates this overlay pool. It must not overlap either VPC or the node CIDR.
+remote_pod_cidrs = ["10.100.0.0/16"]
+
+# Add one entry for each standard Availability Zone or Local Zone that will host
+# a node. Peering remains VPC-to-VPC; these subnets only control EC2 placement.
+remote_node_subnets = {
+  gpu = {
+    cidr              = "172.16.0.0/24"
+    availability_zone = "us-east-1a"
+  }
+}
+
+# The NAT Gateway resides in this public subnet. Hybrid nodes remain private.
+remote_egress_subnet = {
+  cidr              = "172.16.255.0/24"
+  availability_zone = "us-east-1a"
+}
+
+# Replace the AMI and instance type with a GPU configuration available in the
+# selected subnet's Availability Zone. The AMI must include NVIDIA drivers and
+# configure the NVIDIA container toolkit for containerd.
+hybrid_nodes = {
+  inference_gpu = {
+    subnet_key    = "gpu"
+    instance_type = "g5.2xlarge"
+    ami_id        = "ami-replace-with-gpu-ready-image"
+    node_taints   = ["nvidia.com/gpu=true:NoSchedule"]
+  }
+}
+
+# To target an EC2 Capacity Block, place the node in the reservation's
+# Availability Zone and set its reservation ID. The module infers market_type =
+# "capacity-block" from this field; no separate boolean is required.
+# remote_node_subnets = {
+#   capacity_block = {
+#     cidr              = "172.16.1.0/24"
+#     availability_zone = "us-east-1a"
+#   }
+# }
+# hybrid_nodes = {
+#   capacity_block_gpu = {
+#     subnet_key                    = "capacity_block"
+#     instance_type                 = "p5.48xlarge"
+#     ami_id                        = "ami-replace-with-gpu-ready-image"
+#     capacity_block_reservation_id = "cr-0123456789abcdef0"
+#     node_taints                   = ["nvidia.com/gpu=true:NoSchedule"]
+#   }
+# }
+
+# Add a Local Zone group only when the selected subnet uses that Local Zone.
+# remote_zone_group_names = ["us-east-1-atl-2"]
+remote_zone_group_names = []
+
+ssm_activation_registration_limit = 5
+
+availability_zone_count = 3
+single_nat_gateway      = true
+
+# The public EKS API endpoint is always enabled and is not configurable: hybrid
+# nodes register through it, and Terraform admits the remote NAT Gateway address
+# for them automatically. This list adds whoever else needs to reach the API, so
+# replace the placeholder with the CIDR you reach it from, or 0.0.0.0/0 for a
+# throwaway sandbox. Terraform refuses to plan until this is a valid CIDR.
+endpoint_private_access      = true
+endpoint_public_access_cidrs = ["x.x.x.x/32"]
+
+# Set to true to create the AWS Load Balancer Controller IAM role for the
+# optional LiteLLM gateway (docs/llm-gateway.md).
+enable_lb_controller = false
+
+core_node_instance_types = ["m6i.large"]
+core_node_min_size       = 1
+core_node_desired_size   = 1
+core_node_max_size       = 3
+
+tags = {
+  Environment = "demo"
+  Owner       = "replace-me"
+}

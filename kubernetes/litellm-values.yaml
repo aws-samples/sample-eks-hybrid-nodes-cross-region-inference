@@ -1,0 +1,90 @@
+# Values for the official LiteLLM Helm chart (oci://ghcr.io/berriai/litellm-helm),
+# deployed in the cluster Region and fronted by an Application Load Balancer.
+#
+# The ALB registers the gateway's pod IPs, which are ordinary vpc-cni addresses in
+# the cluster VPC, so the load balancer never targets the peered VPC. The gateway
+# makes the cross-Region hop itself through the remote-vllm Service, whose endpoint
+# is the Hybrid Node's address in the remote Region.
+#
+# No database: the chart generates the master key into the litellm-masterkey
+# Secret, and nothing else needs to be created. Without a database there is no
+# admin UI, no virtual keys, and no spend tracking.
+
+replicaCount: 2
+
+image:
+  # Pinned by digest. Re-resolve it when upgrading the chart.
+  tag: "1.105.0@sha256:60947db020b57e204823d3fbc8bb295c85be890d7c9adcc77fb4f5fc2fe410b2"
+  pullPolicy: IfNotPresent
+
+db:
+  useExisting: false
+  deployStandalone: false
+
+migrationJob:
+  enabled: false
+
+# Pin to the cluster Region. These pods must hold vpc-cni addresses so the ALB
+# can register them as ip targets.
+nodeSelector:
+  node-role: core
+
+serviceAccount:
+  create: true
+  automount: false
+
+podSecurityContext:
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 2Gi
+
+proxy_config:
+  model_list:
+    # The remote GPU, reached through the cross-Region Service. The openai/ prefix
+    # tells LiteLLM to treat vLLM as an OpenAI-compatible backend.
+    - model_name: qwen
+      litellm_params:
+        model: openai/Qwen/Qwen2.5-0.5B-Instruct
+        api_base: http://remote-vllm.cross-region-inference.svc.cluster.local:8000/v1
+        api_key: not-required-by-vllm
+  litellm_settings:
+    # Generations can outlast the default timeout; keep it under the ALB idle
+    # timeout below.
+    request_timeout: 540
+    drop_params: true
+  general_settings:
+    master_key: os.environ/PROXY_MASTER_KEY
+
+ingress:
+  enabled: true
+  className: alb
+  annotations:
+    # Internal by default, so installing the chart cannot publish the endpoint to
+    # the internet. docs/llm-gateway.md shows the opt-in for internet-facing
+    # access, which must also name the allowed source CIDRs.
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    # Plain HTTP: the master key crosses the network in cleartext. Attach an ACM
+    # certificate and an HTTPS listener before using this outside a sandbox.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: /health/liveliness
+    # LLM responses can take minutes; the ALB default of 60s truncates them.
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=600
+    alb.ingress.kubernetes.io/tags: Environment=demo
+  hosts:
+    - host: ""
+      paths:
+        - path: /
+          pathType: Prefix

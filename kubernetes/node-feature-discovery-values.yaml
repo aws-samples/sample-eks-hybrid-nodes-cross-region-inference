@@ -1,0 +1,13 @@
+worker:
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  config:
+    sources:
+      pci:
+        deviceClassWhitelist:
+          - "02"
+          - "03"
+        deviceLabelFields:
+          - vendor

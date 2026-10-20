@@ -1,0 +1,29 @@
+# Values for the NVIDIA Kubernetes device plugin chart (nvdp/nvidia-device-plugin).
+# The plugin belongs only on the remote GPU Hybrid Node, never on the
+# cluster-Region core node.
+
+# Scope the DaemonSet to the nodes standalone NFD labelled as carrying an NVIDIA
+# PCI device (10de is the NVIDIA vendor ID). The chart's own nodeAffinity default
+# matches the same label today, but the README gates deploying inference on this
+# DaemonSet's DESIRED/CURRENT/READY counts, so the scope is pinned here rather
+# than inherited: on a node without a GPU, NVML init fails and
+# failOnInitError below turns that into a crash-looping pod, which makes the gate
+# ambiguous.
+nodeSelector:
+  feature.node.kubernetes.io/pci-10de.present: "true"
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+failOnInitError: true
+
+# Step 4 of the README installs NFD as its own release, with PCI vendor labels
+# tuned for the GPU fleet. Turn the chart's bundled NFD subchart off explicitly so
+# a second, differently configured NFD release can never appear. The subchart's
+# Helm condition is "nfd.enabled,gfd.enabled" and only the first resolvable path
+# is evaluated, so this key decides it; leaving it unset relies on the chart
+# happening to default gfd.enabled to false.
+nfd:
+  enabled: false

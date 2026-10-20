@@ -1,0 +1,46 @@
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: eks.amazonaws.com/compute-type
+              operator: In
+              values:
+                - hybrid
+
+tolerations:
+  - operator: Exists
+
+ipam:
+  mode: cluster-pool
+  operator:
+    clusterPoolIPv4MaskSize: ${pod_cidr_mask_size}
+    clusterPoolIPv4PodCIDRList:
+      - ${remote_pod_cidr}
+
+operator:
+  replicas: 1
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: eks.amazonaws.com/compute-type
+                operator: In
+                values:
+                  - hybrid
+  tolerations:
+    - operator: Exists
+  unmanagedPodWatcher:
+    restart: false
+
+envoy:
+  enabled: false
+
+kubeProxyReplacement: "false"
+
+loadBalancer:
+  serviceTopology: true
+
+k8sServiceHost: ${cluster_endpoint_host}
+k8sServicePort: 443
